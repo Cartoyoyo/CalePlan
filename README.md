@@ -1,6 +1,6 @@
 <div align="center">
 
-# <img src="icons/about/logo-full.png" width="357" alt="CalePlan"/>
+# <img src="docs/logo-full.png" width="420" alt="CalePlan"/>
 
 **Cale un PDF (la page de votre choix) ou une image sur la carte QGIS : un clic sur le plan, un clic sur la carte, et le GeoTIFF calé s'ajoute au projet.**
 
