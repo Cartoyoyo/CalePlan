@@ -5,7 +5,7 @@
 **Cale un PDF (la page de votre choix) ou une image sur la carte QGIS : un clic sur le plan, un clic sur la carte, et le GeoTIFF calé s'ajoute au projet.**
 
 [![QGIS](https://img.shields.io/badge/QGIS-3.28%2B-green?logo=qgis&logoColor=white)](https://qgis.org)
-[![Version](https://img.shields.io/badge/version-1.0.0-blue)](metadata.txt)
+[![Version](https://img.shields.io/badge/version-1.0.1-blue)](metadata.txt)
 [![License](https://img.shields.io/badge/license-GPL%20v3-orange)](LICENSE)
 [![Interface](https://img.shields.io/badge/interface-FR%20%7C%20EN%20%7C%20ES%20%7C%20PT%20%7C%20DE-1f6feb)](#français)
 
@@ -269,6 +269,7 @@ L'écriture du GeoTIFF se fait dans un fil séparé : l'interface reste libre pe
 
 | Version | Notes |
 |---------|-------|
+| **1.0.1** | Publication automatique par tag (workflow GitHub) — logo en tête du README — aucun changement de fonctionnement |
 | **1.0.0** | Première version — PDF (choix de la page, vignettes) ou image — clic sur le plan puis sur la carte — similitude dès 2 points, affine dès 4 points — GeoTIFF dans le SCR du projet — couleur transparente (pipette, tolérance, aperçu) — recalage qui remplace la couche — interface en 5 langues |
 
 Détail dans [`CHANGELOG.md`](CHANGELOG.md).

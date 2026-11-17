@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1] - 2026-11-17
+
+### Changed
+- Publication automatique par tag : workflow GitHub (ZIP, Bandit, detect-secrets, envoi sur plugins.qgis.org, release GitHub) et dossier `tools/`.
+- README : logo en tete, a la meme taille que CanaPlan.
+- No change in the plugin's behaviour.
+
 ## [1.0.0] - 2026-11-17
 
 ### Added
