@@ -2,22 +2,28 @@
 import math
 import os
 import re
+import tempfile
 import time
 
-from qgis.core import QgsProject, QgsRasterLayer, QgsSettings
-from qgis.gui import QgsVertexMarker
+from qgis.core import (QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsCsException, QgsPointXY,
+                       QgsProject, QgsRasterLayer, QgsSettings)
+from qgis.gui import QgsProjectionSelectionWidget, QgsVertexMarker
 from qgis.PyQt.QtCore import QSize, Qt, QThread, QTimer, pyqtSignal
 from qgis.PyQt.QtGui import QColor, QIcon, QPixmap
-from qgis.PyQt.QtWidgets import (QAbstractItemView, QApplication, QColorDialog, QComboBox, QDialog,
+from qgis.PyQt.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QColorDialog, QComboBox, QDialog,
                                  QFileDialog, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget,
                                  QListWidgetItem, QMessageBox, QProgressBar, QPushButton, QSlider,
                                  QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget)
 
 from .. import i18n
+from ..core import deps
+from ..core import dxfread as DX
+from ..core import dxfwrite as DW
 from ..core import render as R
 from ..core import transparency as K
 from ..core import transform as T
 from ..core import writer as W
+from . import dxf_layers as DL
 from .about import AboutDialog
 from .map_tool import PickTool
 from .viewer import ImageView, array_to_qimage
@@ -26,6 +32,10 @@ from .widgets import (ABOUT_BTN_CSS, COUNT_CSS, GO_CSS, GREEN, NOTICE_CSS, Optio
 DPI_CHOICES = (100, 150, 200, 300)
 PAPERS = (("A0", 841, 1189), ("A1", 594, 841), ("A2", 420, 594), ("A3", 297, 420),
           ("A4", 210, 297), ("A5", 148, 210))
+_CRS_OPTION = getattr(QgsProjectionSelectionWidget, "CrsOption", None)
+PROJECT_CRS_OPTION = getattr(_CRS_OPTION, "ProjectCrs", None) if _CRS_OPTION is not None else None
+if PROJECT_CRS_OPTION is None:
+    PROJECT_CRS_OPTION = getattr(QgsProjectionSelectionWidget, "ProjectCrs")
 ICON_CROSS = getattr(QgsVertexMarker, "ICON_CROSS", None)
 if ICON_CROSS is None:
     ICON_CROSS = QgsVertexMarker.IconType.ICON_CROSS
@@ -51,6 +61,75 @@ class WriteWorker(QThread):
             self.failed.emit(str(exc))
             return
         self.succeeded.emit(bool(warped))
+
+
+class LoadWorker(QThread):
+    """Lit le DXF (ezdxf) hors du fil de l'interface ; l'apercu image est ensuite dessine par l'interface."""
+    progressed = pyqtSignal(int)
+    succeeded = pyqtSignal(object)
+    failed = pyqtSignal(str, str)
+
+    def __init__(self, path, parent=None):
+        super().__init__(parent)
+        self._path = path
+        self._last = -1
+
+    def _tick(self, frac):
+        pct = int(frac * 100)
+        if pct != self._last:                  # un signal par pour cent, pas un par objet
+            self._last = pct
+            self.progressed.emit(pct)
+
+    def run(self):
+        try:
+            data = DX.load(self._path, progress=self._tick)
+        except DX.DxfError as exc:
+            self.failed.emit(exc.code, exc.detail)
+            return
+        except Exception as exc:        # lecture ezdxf / memoire : le detail est montre a l'utilisateur
+            self.failed.emit("open_failed", "%s: %s" % (type(exc).__name__, exc))
+            return
+        self.succeeded.emit(data)
+
+
+class DxfWorker(QThread):
+    """Ecrit le DXF cale (et son GeoPackage) hors du fil de l'interface : ezdxf et OGR, aucun objet QGIS."""
+    progressed = pyqtSignal(str, int)         # etape ("dxf" | "gpkg"), pour cent de l'etape
+    succeeded = pyqtSignal(dict)
+    failed = pyqtSignal(str)
+
+    def __init__(self, src, matrix, tmp_dxf, tmp_gpkg, crs_wkt, parent=None):
+        super().__init__(parent)
+        self._args = (src, matrix, tmp_dxf, tmp_gpkg, crs_wkt)
+        self._last = ("", -1)
+
+    def _emit(self, stage, frac):
+        pct = int(frac * 100)
+        if (stage, pct) != self._last:
+            self._last = (stage, pct)
+            self.progressed.emit(stage, pct)
+
+    def run(self):
+        src, matrix, tmp_dxf, tmp_gpkg, wkt = self._args
+        try:
+            os.makedirs(os.path.dirname(os.path.abspath(tmp_dxf)), exist_ok=True)
+            ok, dropped, enc = DW.write_dxf(src, tmp_dxf, matrix, lambda f: self._emit("dxf", f))
+            counts = None
+            if tmp_gpkg:
+                counts = DW.write_gpkg(tmp_dxf, tmp_gpkg, wkt, enc, lambda f: self._emit("gpkg", f), ok + dropped)
+        except Exception as exc:        # ezdxf / GDAL / disque : le detail est affiche a l'utilisateur
+            self.failed.emit("%s: %s" % (type(exc).__name__, exc))
+            return
+        self.succeeded.emit({"ok": ok, "dropped": dropped, "counts": counts})
+
+
+class InstallWorker(QThread):
+    """Installe ezdxf (pip) hors du fil de l'interface."""
+    done = pyqtSignal(bool, str)
+
+    def run(self):
+        ok, out = deps.install(deps.missing())
+        self.done.emit(bool(ok), out)
 
 
 def _sanitize(name):
@@ -92,10 +171,18 @@ class CalePlanDialog(QDialog):
         self._name_edited = False
         self._thumb_todo = []
         self._worker = None
+        self.dxf = None               # DxfData du DXF ouvert (None pour un PDF / une image)
+        self._saving = True           # GeoTIFF enregistre dans le dossier choisi (sinon : dossier temporaire)
+        self._installer = None
+        self._loader = None           # lecture du DXF en cours (LoadWorker)
+        self._builder = None          # creation des couches du DXF en cours (dxf_layers.Builder)
+        self._plan = {}               # etape -> (debut, largeur) en pour cent de la barre
         self._written = set()         # fichiers ecrits par cette fenetre (remplacables sans question)
         self._outputs = {}            # (source, page) -> dernier GeoTIFF ecrit
         self._tmp = None
         self._picking = False         # pipette de couleur active
+        self.out_crs = QgsCoordinateReferenceSystem(self.canvas.mapSettings().destinationCrs())   # SCR du calage
+        self._crs_follows_project = True      # tant que l'utilisateur n'en choisit pas un autre
         saved_col = QColor(str(self.settings.value("CalePlan/key_color", "#ffffff")))
         self._key_color = saved_col if saved_col.isValid() else QColor("#ffffff")
         self._preview_timer = QTimer(self)
@@ -305,6 +392,11 @@ class CalePlanDialog(QDialog):
         # ④ Resultat
         self.lbl_res_title = QLabel()
         sec4, box4, _h4 = section(self.lbl_res_title, 4)
+        _h4.addStretch()
+        self.chk_save = QCheckBox()              # decoche : GeoTIFF dans le dossier temporaire, couche temporaire
+        self.chk_save.setChecked(str(self.settings.value("CalePlan/save_tif", "false")).lower() == "true")
+        self.chk_save.toggled.connect(self._save_toggled)
+        _h4.addWidget(self.chk_save)
         g = QGridLayout()
         g.setColumnStretch(1, 1)
         g.setHorizontalSpacing(8)
@@ -316,6 +408,11 @@ class CalePlanDialog(QDialog):
         self.btn_folder = QPushButton("📁")
         self.btn_folder.setFixedWidth(32)
         self.btn_folder.clicked.connect(self._choose_folder)
+        self.lbl_out_crs = QLabel()
+        self.crs_widget = QgsProjectionSelectionWidget()
+        self.crs_widget.setOptionVisible(PROJECT_CRS_OPTION, True)
+        self.crs_widget.setCrs(self.out_crs)
+        self.crs_widget.crsChanged.connect(self._on_crs_widget)
         self.lbl_out_opacity = QLabel()
         self.sld_opacity = QSlider(Qt.Orientation.Horizontal)
         self.sld_opacity.setRange(0, 100)
@@ -325,8 +422,28 @@ class CalePlanDialog(QDialog):
         g.addWidget(self.lbl_out_folder, 1, 0)
         g.addWidget(self.edt_folder, 1, 1)
         g.addWidget(self.btn_folder, 1, 2)
-        g.addWidget(self.lbl_out_opacity, 2, 0)
-        g.addWidget(self.sld_opacity, 2, 1, 1, 2)
+        g.addWidget(self.lbl_out_crs, 2, 0)
+        g.addWidget(self.crs_widget, 2, 1, 1, 2)
+        g.addWidget(self.lbl_out_opacity, 3, 0)
+        g.addWidget(self.sld_opacity, 3, 1, 1, 2)
+        # DXF : a la place de l'opacite, les deux sorties possibles
+        self.lbl_out_what = QLabel()
+        self.chk_out_dxf = QCheckBox()
+        self.chk_out_gpkg = QCheckBox()
+        self.chk_out_dxf.setChecked(str(self.settings.value("CalePlan/out_dxf", "true")).lower() == "true")
+        self.chk_out_gpkg.setChecked(str(self.settings.value("CalePlan/out_gpkg", "true")).lower() == "true")
+        for chk, key in ((self.chk_out_dxf, "CalePlan/out_dxf"), (self.chk_out_gpkg, "CalePlan/out_gpkg")):
+            chk.toggled.connect(lambda v, k=key: (self.settings.setValue(k, bool(v)), self._refresh()))
+        what = QHBoxLayout()
+        what.setSpacing(12)
+        what.addWidget(self.chk_out_dxf)
+        what.addWidget(self.chk_out_gpkg)
+        what.addStretch(1)
+        g.addWidget(self.lbl_out_what, 3, 0)
+        g.addLayout(what, 3, 1, 1, 2)
+        self._img_only = [self.lbl_out_opacity, self.sld_opacity, self.sw_key, self.lbl_key, self.btn_swatch,
+                          self.btn_pick, self.lbl_tol, self.sld_tol, self.lbl_tol_val]
+        self._dxf_only = [self.lbl_out_what, self.chk_out_dxf, self.chk_out_gpkg]
         box4.addLayout(g)
         right.addWidget(sec4)
 
@@ -418,6 +535,14 @@ class CalePlanDialog(QDialog):
         self.lbl_out_name.setText(t("out_name"))
         self.lbl_out_folder.setText(t("out_folder"))
         self.lbl_out_opacity.setText(t("out_opacity"))
+        self.lbl_out_what.setText(t("out_what"))
+        self.chk_out_dxf.setText(t("out_dxf_cb"))
+        self.chk_out_gpkg.setText(t("out_gpkg_cb"))
+        self.chk_save.setText(t("out_save"))
+        self.chk_save.setToolTip(t("out_save_tip"))
+        self.lbl_out_crs.setText(t("out_crs"))
+        self.lbl_out_crs.setToolTip(t("crs_tip"))
+        self.crs_widget.setToolTip(t("crs_tip"))
         self.card_add.set_texts(t("card_add_title"), t("card_add_on"), t("card_add_off"),
                                 t("chip_on"), t("chip_off"))
         self.card_hide.set_texts(t("card_hide_title"), t("card_hide_on"), t("card_hide_off"),
@@ -426,9 +551,43 @@ class CalePlanDialog(QDialog):
         self.btn_close.setText(t("btn_close"))
         self.btn_log.setText(t("btn_log") + (" ▾" if self.btn_log.isChecked() else " ▸"))
         self.lbl_status.setText(t("status_ready"))
+        self._apply_mode()
         self._update_file_label()
         self._fill_page_list(keep_thumbs=True)
         self._refresh()
+
+    def _apply_mode(self):
+        """Un DXF n'a ni resolution de rendu ni transparence ni opacite, et jamais de deformation :
+        similitude seule ; ses deux sorties remplacent le curseur d'opacite."""
+        is_dxf = self.dxf is not None
+        for w in self._img_only:
+            w.setVisible(not is_dxf)
+        for w in self._dxf_only:
+            w.setVisible(is_dxf)
+        self.cmb_transfo.setEnabled(not is_dxf)
+        self.chk_save.setVisible(not is_dxf)
+        self._save_toggled()
+        self.lbl_dpi.setText(i18n.tr("dxf_res_label" if is_dxf else "dpi_label"))
+        self.lbl_out_name.setText(i18n.tr("out_name_dxf" if is_dxf else "out_name"))
+        self.cmb_dpi.blockSignals(True)
+        for i in range(self.cmb_dpi.count()):
+            d = int(self.cmb_dpi.itemData(i))
+            self.cmb_dpi.setItemText(i, i18n.tr("dxf_res_item", px=d * 20) if is_dxf else "%d dpi" % d)
+        self.cmb_dpi.blockSignals(False)
+
+    def _save_toggled(self, _v=None):
+        """Sans enregistrement, le dossier de sortie ne sert plus : le GeoTIFF part dans le dossier temporaire."""
+        keep = self.chk_save.isChecked() or self.dxf is not None
+        self.edt_folder.setEnabled(keep)
+        self.btn_folder.setEnabled(keep)
+        self.lbl_out_folder.setEnabled(keep)
+        self.settings.setValue("CalePlan/save_tif", bool(self.chk_save.isChecked()))
+        if getattr(self, "lbl_recap", None) is not None:
+            self._update_recap()
+
+    @staticmethod
+    def _temp_folder():
+        return os.path.join(tempfile.gettempdir(), "CalePlan")
 
     def _lang_changed(self, _i):
         code = self.cmb_lang.currentData()
@@ -443,7 +602,8 @@ class CalePlanDialog(QDialog):
             self.chip_pages.setVisible(False)
             return
         self.lbl_file.setText("<b>%s</b>" % os.path.basename(self.path))
-        self.chip_pages.setText(i18n.tr("chip_pages", n=self.n_pages) if R.is_pdf(self.path)
+        self.chip_pages.setText(i18n.tr("chip_dxf") if self.dxf is not None
+                                else i18n.tr("chip_pages", n=self.n_pages) if R.is_pdf(self.path)
                                 else i18n.tr("image_item"))
         self.chip_pages.setVisible(True)
 
@@ -482,6 +642,9 @@ class CalePlanDialog(QDialog):
         if self._busy:
             return
         self._cancel_pending()
+        if R.is_dxf(path):
+            self._open_dxf(path)
+            return
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             n = R.page_count(path)
@@ -490,6 +653,8 @@ class CalePlanDialog(QDialog):
             self._error_box(exc)
             return
         QApplication.restoreOverrideCursor()
+        self.dxf = None
+        self._apply_mode()
         self.path = path
         self.n_pages = n
         self.page = 0
@@ -502,6 +667,79 @@ class CalePlanDialog(QDialog):
         self._fill_page_list()
         self.log(i18n.tr("log_opened", name=os.path.basename(path), n=n))
         self._load_page()
+
+    # ----------------------------------------------------------------- DXF
+    def _offer_install(self, then):
+        """Propose d'installer ezdxf (une fois), puis rappelle `then()` si l'installation reussit."""
+        ans = QMessageBox.question(self, i18n.tr("err_title"), i18n.tr("dxf_need_text"))
+        if ans != QMessageBox.StandardButton.Yes:
+            return
+        self._set_busy(True)
+        self.lbl_status.setText(i18n.tr("dxf_installing"))
+        worker = InstallWorker(self)
+        worker.done.connect(lambda ok, out: self._install_done(ok, out, then))
+        worker.finished.connect(worker.deleteLater)
+        self._installer = worker
+        worker.start()
+
+    def _install_done(self, ok, out, then):
+        self._installer = None
+        self._set_busy(False)
+        self.log("ℹ " + (out[-400:] if out else ""))
+        if ok and not deps.missing():
+            self.lbl_status.setText(i18n.tr("dxf_install_ok"))
+            then()
+            return
+        self.lbl_status.setText(i18n.tr("status_ready"))
+        box = QMessageBox(QMessageBox.Icon.Critical, i18n.tr("err_title"),
+                          i18n.tr("dxf_install_fail", cmd=deps.manual_command(deps.missing() or [s for _m, s in deps.REQUIRED])),
+                          QMessageBox.StandardButton.Ok, self)
+        box.setDetailedText(out)
+        box.exec()
+
+    def _open_dxf(self, path):
+        if not DX.available():
+            self._offer_install(lambda: self._open_dxf(path))
+            return
+        self._set_busy(True)
+        self.lbl_status.setText(i18n.tr("status_dxf_read"))
+        loader = LoadWorker(path, self)
+        loader.progressed.connect(self.progress.setValue)
+        loader.succeeded.connect(lambda data: self._dxf_loaded(path, data))
+        loader.failed.connect(self._dxf_load_failed)
+        loader.finished.connect(loader.deleteLater)
+        self._loader = loader
+        loader.start()
+
+    def _dxf_load_failed(self, code, detail):
+        self._loader = None
+        self._set_busy(False)
+        key = "err_dxf_empty" if code == "empty" else "err_dxf_open"
+        QMessageBox.warning(self, i18n.tr("err_title"), i18n.tr(key, detail=detail or code))
+        self.lbl_status.setText(i18n.tr("status_ready"))
+
+    def _dxf_loaded(self, path, data):
+        self._loader = None
+        self._set_busy(False)
+        self.dxf = data
+        self.path = path
+        self.n_pages = 1
+        self.page = 0
+        self.points = {}
+        self.arr = None
+        self._name_edited = False
+        self.settings.setValue("CalePlan/last_dir", os.path.dirname(path))
+        self.view.clear_image()
+        self._apply_mode()
+        self._update_file_label()
+        self._fill_page_list()
+        x0, y0, x1, y1 = data.bounds
+        extra = i18n.tr("log_dxf_outliers", k=data.outliers) if data.outliers else ""
+        self.log(i18n.tr("log_dxf", n=data.n_entities, layers=data.layers, w="%.2f" % (x1 - x0),
+                         h="%.2f" % (y1 - y0), extra=extra))
+        if data.skipped:
+            self.log(i18n.tr("log_dxf_skipped", k=data.skipped))
+        self._load_page()                  # dessin de l'apercu (QPainter) : dans le fil de l'interface, moins d'une seconde
 
     def _fill_page_list(self, keep_thumbs=False):
         old = {}
@@ -521,11 +759,13 @@ class CalePlanDialog(QDialog):
             self.lst_pages.setCurrentRow(row)
         self.lst_pages.blockSignals(False)
         if not keep_thumbs:
-            self._thumb_todo = list(range(self.n_pages))
+            self._thumb_todo = [] if self.dxf is not None else list(range(self.n_pages))
             QTimer.singleShot(0, self._next_thumb)
 
     def _page_text(self, i):
-        if self.path and R.is_pdf(self.path):
+        if self.dxf is not None:
+            label = i18n.tr("dxf_item")
+        elif self.path and R.is_pdf(self.path):
             label = i18n.tr("page_item", n=i + 1)
         else:
             label = i18n.tr("image_item")
@@ -534,7 +774,7 @@ class CalePlanDialog(QDialog):
 
     def _next_thumb(self):
         """Vignettes une par une (la fenetre reste reactive pendant le remplissage)."""
-        if not self._thumb_todo or not self.path:
+        if not self._thumb_todo or not self.path or self.dxf is not None:
             return
         if self._busy:                              # pas de rendu pendant l'ecriture
             QTimer.singleShot(300, self._next_thumb)
@@ -575,29 +815,56 @@ class CalePlanDialog(QDialog):
         self.lbl_status.repaint()                 # repeint direct, sans relancer la boucle d'evenements
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         dpi = int(self.cmb_dpi.currentData())
-        try:
-            arr, eff = R.render(self.path, self.page, dpi)
-        except R.RenderError as exc:
-            QApplication.restoreOverrideCursor()
-            self._error_box(exc)
-            return
+        if self.dxf is not None:
+            # Les reperes sont gardes en COORDONNEES DU DESSIN le temps du re-rendu : changer la
+            # definition de l'apercu ne les deplace pas.
+            kept = []
+            if self.arr is not None and self.dxf.geo is not None:
+                h0, w0 = self.arr.shape[:2]
+                for p in self._pts():
+                    kept.append((p, DX.to_dxf(self.dxf.geo, p["fx"] * w0, p["fy"] * h0)))
+            try:
+                arr = DX.render(self.dxf, dpi * 20)
+            except (RuntimeError, ValueError, MemoryError) as exc:
+                QApplication.restoreOverrideCursor()
+                QMessageBox.warning(self, i18n.tr("err_title"), i18n.tr("err_dxf_open", detail=str(exc)))
+                return
+            eff = None
+            h1, w1 = arr.shape[:2]
+            for p, (x, y) in kept:
+                px, py = DX.to_pixel(self.dxf.geo, x, y)
+                p["fx"], p["fy"] = px / w1, py / h1
+        else:
+            try:
+                arr, eff = R.render(self.path, self.page, dpi)
+            except R.RenderError as exc:
+                QApplication.restoreOverrideCursor()
+                self._error_box(exc)
+                return
         QApplication.restoreOverrideCursor()
         self.arr, self.eff_dpi = arr, eff
         self.view.set_image(arr)
-        if self.sw_key.isChecked():
+        if self.dxf is not None and self.lst_pages.count():
+            pm = QPixmap.fromImage(array_to_qimage(arr)).scaled(
+                120, 86, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            self.lst_pages.item(0).setIcon(QIcon(pm))
+        if self.sw_key.isChecked() and self.dxf is None:
             self._apply_preview()
         if not self._name_edited:
             base = _sanitize(os.path.splitext(os.path.basename(self.path))[0])
             if R.is_pdf(self.path) and self.n_pages > 1:
                 base += "_p%d" % (self.page + 1)
-            self.edt_name.setText(base + ".tif")
+            self.edt_name.setText(base + ("_cale.dxf" if self.dxf is not None else ".tif"))
         h, w = arr.shape[:2]
         extra = ""
         if eff is not None:
             extra = i18n.tr("status_dpi", dpi=round(eff))
             if eff < dpi - 0.5:
                 extra += i18n.tr("status_capped", dpi=round(eff), px=R.MAX_SIDE)
-        self.lbl_status.setText(i18n.tr("status_loaded", n=self.page + 1, w=w, h=h, dpi=extra))
+        if self.dxf is not None:
+            self.lbl_status.setText(i18n.tr("status_dxf_loaded", w=w, h=h, n=self.dxf.n_entities))
+        else:
+            self.lbl_status.setText(i18n.tr("status_loaded", n=self.page + 1, w=w, h=h, dpi=extra))
         self.log("ℹ " + self.lbl_status.text())
         self._refresh()
 
@@ -624,7 +891,16 @@ class CalePlanDialog(QDialog):
         if self._incomplete():
             self.lbl_status.setText(i18n.tr("status_waiting_map"))
             return
+        snapped = False
+        if self.dxf is not None and not (QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier):
+            # accrochage au sommet du dessin le plus proche (10 pixels d'ecran) : precision du vecteur
+            h, w = self.arr.shape[:2]
+            hit = DX.snap(self.dxf, fx * w, fy * h, 10.0 / max(self.view.transform().m11(), 1e-6))
+            if hit is not None:
+                fx, fy, snapped = hit[0] / w, hit[1] / h, True
         self._pts().append({"fx": fx, "fy": fy, "X": None, "Y": None})
+        if snapped:
+            self.log(i18n.tr("log_snap"))
         self._start_pick()
         self._refresh()
 
@@ -654,6 +930,7 @@ class CalePlanDialog(QDialog):
     def _on_map_picked(self, pt):
         inc = self._incomplete()
         if inc:
+            pt = self._to_out(pt)                      # le clic est dans le SCR du projet
             inc[0]["X"], inc[0]["Y"] = float(pt.x()), float(pt.y())
             h, w = (self.arr.shape[:2] if self.arr is not None else (1, 1))
             self.log(i18n.tr("log_point", n=self._pts().index(inc[0]) + 1, px=round(inc[0]["fx"] * w),
@@ -717,6 +994,63 @@ class CalePlanDialog(QDialog):
             self._end_pick()
         self._refresh()
 
+    # ============================================================ SCR du calage
+    def _transform(self, source, target):
+        return QgsCoordinateTransform(source, target, QgsProject.instance())
+
+    def _to_out(self, pt):
+        """Point du canevas (SCR du projet) -> SCR du calage."""
+        canvas_crs = self.canvas.mapSettings().destinationCrs()
+        if canvas_crs == self.out_crs:
+            return pt
+        return self._transform(canvas_crs, self.out_crs).transform(pt)
+
+    def _to_canvas(self, x, y):
+        """Point en SCR du calage -> SCR du projet (affichage des reperes sur la carte)."""
+        pt = QgsPointXY(x, y)
+        canvas_crs = self.canvas.mapSettings().destinationCrs()
+        if canvas_crs == self.out_crs:
+            return pt
+        try:
+            return self._transform(self.out_crs, canvas_crs).transform(pt)
+        except QgsCsException:
+            return pt
+
+    def _on_crs_widget(self, crs):
+        """L'utilisateur choisit un SCR : tant qu'il est identique a celui du projet, on le suit."""
+        self._crs_follows_project = (crs == self.canvas.mapSettings().destinationCrs())
+        self._set_out_crs(crs)
+
+    def _set_out_crs(self, new):
+        """Change le SCR du calage : les points deja saisis sont CONVERTIS (ils gardent leur position reelle)."""
+        new = QgsCoordinateReferenceSystem(new)
+        if not new.isValid() or new == self.out_crs:
+            return
+        old = self.out_crs
+        converted = []
+        try:
+            tr = self._transform(old, new)
+            for pts in self.points.values():
+                for p in pts:
+                    if p["X"] is not None and p["Y"] is not None:
+                        q = tr.transform(QgsPointXY(p["X"], p["Y"]))
+                        converted.append((p, q.x(), q.y()))
+        except QgsCsException as exc:
+            self.log(i18n.tr("log_error", detail=i18n.tr("err_crs_transform", detail=str(exc))))
+            self.crs_widget.blockSignals(True)
+            self.crs_widget.setCrs(old)
+            self.crs_widget.blockSignals(False)
+            return
+        for p, x, y in converted:
+            p["X"], p["Y"] = x, y
+        self.out_crs = new
+        self.crs_widget.blockSignals(True)
+        self.crs_widget.setCrs(new)
+        self.crs_widget.blockSignals(False)
+        if converted:
+            self.log(i18n.tr("log_crs", authid=new.authid() or new.description()))
+        self._refresh()
+
     # ====================================================== couleur transparente
     def _key_rgb(self):
         c = self._key_color
@@ -778,16 +1112,26 @@ class CalePlanDialog(QDialog):
 
     # ============================================================== rafraichir
     def _refresh(self):
+        canvas_crs = self.canvas.mapSettings().destinationCrs()
+        if self._crs_follows_project and self.out_crs != canvas_crs:      # le projet a change de SCR
+            self._set_out_crs(canvas_crs)
+            return
         self._compute_fit()
         self._fill_table()
         pts = self._pts() if self.path else []
         self.view.set_points([(p["fx"], p["fy"], p["X"] is not None and p["Y"] is not None) for p in pts])
         self._redraw_markers()
+        for col in (2, 3):
+            head = self.tbl.horizontalHeaderItem(col)
+            if head is not None:
+                head.setToolTip(i18n.tr("col_xy_tip", authid=self.out_crs.authid() or self.out_crs.description()))
         self._update_hint()
         self._update_fit_labels()
         self.chip_points.setText(i18n.tr("chip_points", n=len(self._complete_points())))
         self._update_recap()
         ok = self.fit is not None and not self._incomplete() and not self._busy
+        if self.dxf is not None and not (self.chk_out_dxf.isChecked() or self.chk_out_gpkg.isChecked()):
+            ok = False
         self.btn_go.setEnabled(bool(ok))
         self.btn_undo.setEnabled(bool(pts))
         if self.lst_pages.count() and 0 <= self.page < self.lst_pages.count():
@@ -805,7 +1149,10 @@ class CalePlanDialog(QDialog):
         img = [(p["fx"] * w, p["fy"] * h) for p in pts]
         mp = [(p["X"], p["Y"]) for p in pts]
         try:
-            res = T.fit(img, mp, self.cmb_transfo.currentData() or "auto")
+            # un dessin DXF n'a aucune deformation de scan : similitude seule (3 points et plus =
+            # moindres carres, donc controle par l'ecart), l'affine ne ferait que cacher une erreur de pointe
+            method = "similarity" if self.dxf is not None else (self.cmb_transfo.currentData() or "auto")
+            res = T.fit(img, mp, method)
         except T.FitError as exc:
             self.fit_error = {"collinear": "err_collinear"}.get(exc.code, "err_coincident")
             return
@@ -813,7 +1160,7 @@ class CalePlanDialog(QDialog):
         if info["mirrored"]:
             self.fit_error = "err_mirror"
             return
-        if self.canvas.mapSettings().destinationCrs().isGeographic():
+        if not self.out_crs.isValid() or self.out_crs.isGeographic():
             self.fit_error = "err_geographic"
             return
         res["info"], res["n"] = info, len(pts)
@@ -857,9 +1204,8 @@ class CalePlanDialog(QDialog):
         if not self.path or not self.isVisible() and not self._hidden_for_pick:
             return
         for p in self._complete_points():
-            from qgis.core import QgsPointXY
             m = QgsVertexMarker(self.canvas)
-            m.setCenter(QgsPointXY(p["X"], p["Y"]))
+            m.setCenter(self._to_canvas(p["X"], p["Y"]))
             m.setColor(QColor("#d62828"))
             m.setIconType(ICON_CROSS)
             m.setIconSize(14)
@@ -879,7 +1225,7 @@ class CalePlanDialog(QDialog):
             txt = i18n.tr("hint_pending", n=len(self._pts()))
             self.lbl_status.setText(i18n.tr("status_waiting_map"))
         elif n == 0:
-            txt = i18n.tr("hint_none")
+            txt = i18n.tr("hint_dxf" if self.dxf is not None else "hint_none")
         elif n == 1:
             txt = i18n.tr("hint_one")
         else:
@@ -904,8 +1250,11 @@ class CalePlanDialog(QDialog):
         elif f["kind"] == "affine" and f["n"] == 3:
             lines.append(i18n.tr("fit_exact"))
         px = f["info"]["pixel_x"]
-        lines.append(i18n.tr("fit_pixel", px=("%.3f" % px).rstrip("0").rstrip("."),
-                             rot="%.1f" % f["info"]["rotation"]))
+        if self.dxf is not None and self.dxf.geo is not None:
+            lines.append(i18n.tr("fit_dxf", k="%.6g" % (px / self.dxf.geo[2]), rot="%.1f" % f["info"]["rotation"]))
+        else:
+            lines.append(i18n.tr("fit_pixel", px=("%.3f" % px).rstrip("0").rstrip("."),
+                                 rot="%.1f" % f["info"]["rotation"]))
         if self.fit_warn:
             lines.append("⚠ " + i18n.tr(self.fit_warn))
         self.lbl_fit2.setText("\n".join(lines))
@@ -921,15 +1270,20 @@ class CalePlanDialog(QDialog):
         parts = [i18n.tr("recap_points", page=page, n=n)]
         if self.fit:
             kind = i18n.tr("transfo_sim" if self.fit["kind"] == "similarity" else "transfo_aff").split(" (")[0]
-            px = ("%.3f" % self.fit["info"]["pixel_x"]).rstrip("0").rstrip(".")
             parts.append("<b style=\"color:%s\">%s</b>" % (GREEN, kind))
-            parts.append(i18n.tr("fit_pixel", px=px, rot="%.1f" % self.fit["info"]["rotation"]))
-        crs = self.canvas.mapSettings().destinationCrs()
-        parts.append(crs.authid() or crs.description())
-        if self.sw_key.isChecked():
+            if self.dxf is not None and self.dxf.geo is not None:
+                parts.append(i18n.tr("fit_dxf", k="%.6g" % (self.fit["info"]["pixel_x"] / self.dxf.geo[2]),
+                                     rot="%.1f" % self.fit["info"]["rotation"]))
+            else:
+                px = ("%.3f" % self.fit["info"]["pixel_x"]).rstrip("0").rstrip(".")
+                parts.append(i18n.tr("fit_pixel", px=px, rot="%.1f" % self.fit["info"]["rotation"]))
+        parts.append(self.out_crs.authid() or self.out_crs.description())
+        if self.sw_key.isChecked() and self.dxf is None:
             parts.append(i18n.tr("recap_key", color=self._key_color.name().upper(), tol=self.sld_tol.value()))
         if self.chk_add.isChecked():
             parts.append("<b style=\"color:%s\">%s</b>" % (GREEN, i18n.tr("recap_added")))
+        if self.dxf is None and not self.chk_save.isChecked():
+            parts.append(i18n.tr("recap_temp"))
         name = self.edt_name.text().strip()
         text = " · ".join(parts)
         if name:
@@ -940,20 +1294,24 @@ class CalePlanDialog(QDialog):
     def _go(self):
         if not self.fit or self._busy:
             return
+        if self.dxf is not None:
+            self._go_dxf()
+            return
         name = _sanitize(self.edt_name.text())
         if not name:
             QMessageBox.warning(self, i18n.tr("err_title"), i18n.tr("err_no_name"))
             return
         if not name.lower().endswith((".tif", ".tiff")):
             name += ".tif"
-        folder = self.edt_folder.text().strip() or self._default_folder()
+        self._saving = self.chk_save.isChecked()
+        folder = (self.edt_folder.text().strip() or self._default_folder()) if self._saving else self._temp_folder()
         out = os.path.join(folder, name)
-        known = self._norm(out) in self._written or bool(self._layers_for(out))
+        known = (not self._saving) or self._norm(out) in self._written or bool(self._layers_for(out))
         if os.path.exists(out) and not known:       # fichier etranger : on demande ; le notre se remplace
             ans = QMessageBox.question(self, i18n.tr("err_title"), i18n.tr("confirm_overwrite", name=name))
             if ans != QMessageBox.StandardButton.Yes:
                 return
-        crs = self.canvas.mapSettings().destinationCrs()
+        crs = QgsCoordinateReferenceSystem(self.out_crs)
         # Ecriture dans un fichier temporaire voisin : si elle echoue, l'ancien calage reste intact ;
         # le fichier definitif est remplace seulement apres avoir retire l'ancienne couche (verrou Windows).
         tmp = os.path.splitext(out)[0] + ".part.tif"
@@ -971,6 +1329,164 @@ class CalePlanDialog(QDialog):
         worker.finished.connect(worker.deleteLater)
         self._worker = worker
         worker.start()
+
+    # ---------------------------------------------------------------- calage d'un DXF
+    def _go_dxf(self):
+        want_dxf, want_gpkg = self.chk_out_dxf.isChecked(), self.chk_out_gpkg.isChecked()
+        if not (want_dxf or want_gpkg):
+            QMessageBox.warning(self, i18n.tr("err_title"), i18n.tr("err_no_output"))
+            return
+        stem = _sanitize(os.path.splitext(self.edt_name.text())[0])
+        if not stem:
+            QMessageBox.warning(self, i18n.tr("err_title"), i18n.tr("err_no_name"))
+            return
+        folder = self.edt_folder.text().strip() or self._default_folder()
+        out_dxf = os.path.join(folder, stem + ".dxf")
+        out_gpkg = os.path.join(folder, stem + ".gpkg")
+        if want_dxf and self._norm(out_dxf) == self._norm(self.path):      # jamais ecraser le DXF d'origine
+            stem += "_cale"
+            out_dxf = os.path.join(folder, stem + ".dxf")
+            out_gpkg = os.path.join(folder, stem + ".gpkg")
+        targets = ([out_dxf] if want_dxf else []) + ([out_gpkg] if want_gpkg else [])
+        for t in targets:
+            known = self._norm(t) in self._written or bool(DL.vector_layers_for(QgsProject.instance(), t, self._norm))
+            if os.path.exists(t) and not known:
+                ans = QMessageBox.question(self, i18n.tr("err_title"),
+                                           i18n.tr("confirm_overwrite", name=os.path.basename(t)))
+                if ans != QMessageBox.StandardButton.Yes:
+                    return
+        os.makedirs(folder, exist_ok=True)
+        crs = QgsCoordinateReferenceSystem(self.out_crs)
+        matrix = DX.pixel_gt_to_dxf_matrix(self.fit["gt"], self.dxf.geo)
+        # Fichiers temporaires voisins : un echec laisse les anciens fichiers intacts.
+        tmp_dxf = (os.path.join(folder, stem + ".part.dxf") if want_dxf
+                   else os.path.join(tempfile.gettempdir(), "caleplan_%d.part.dxf" % os.getpid()))
+        tmp_gpkg = os.path.join(folder, stem + ".part.gpkg") if want_gpkg else None
+        self._ctx = {"out_dxf": out_dxf, "out_gpkg": out_gpkg, "tmp_dxf": tmp_dxf, "tmp_gpkg": tmp_gpkg,
+                     "want_dxf": want_dxf, "want_gpkg": want_gpkg, "stem": stem, "folder": folder, "crs": crs}
+        # Repartition de la barre : DXF recale, GeoPackage, puis creation des couches dans QGIS (la plus lente)
+        adding = want_gpkg and self.chk_add.isChecked()
+        if adding:
+            self._plan = {"dxf": (0, 30), "gpkg": (30, 20), "layers": (50, 50)}
+        elif want_gpkg:
+            self._plan = {"dxf": (0, 60), "gpkg": (60, 40)}
+        else:
+            self._plan = {"dxf": (0, 100)}
+        self._set_busy(True)
+        self.lbl_status.setText(i18n.tr("status_writing_dxf"))
+        worker = DxfWorker(self.path, matrix, tmp_dxf, tmp_gpkg, crs.toWkt(), self)
+        worker.progressed.connect(self._dxf_progress)
+        worker.succeeded.connect(self._dxf_done)
+        worker.failed.connect(self._dxf_failed)
+        worker.finished.connect(worker.deleteLater)
+        self._worker = worker
+        worker.start()
+
+    def _dxf_progress(self, stage, pct):
+        start, width = self._plan.get(stage, (0, 100))
+        self.progress.setValue(int(start + width * pct / 100.0))
+        self.lbl_status.setText(i18n.tr("status_writing_gpkg" if stage == "gpkg" else "status_writing_dxf"))
+
+    def _dxf_cleanup(self):
+        ctx = getattr(self, "_ctx", None) or {}
+        for key in ("tmp_dxf", "tmp_gpkg"):
+            tmp = ctx.get(key)
+            if tmp and os.path.exists(tmp):
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass                                  # fichier verrouille : il sera remplace au prochain essai
+
+    def _dxf_failed(self, detail):
+        self._worker = None
+        self._dxf_cleanup()
+        self._set_busy(False)
+        self.log(i18n.tr("log_error", detail=detail))
+        QMessageBox.critical(self, i18n.tr("err_title"), i18n.tr("err_write", detail=detail))
+
+    def _dxf_done(self, res):
+        self._worker = None
+        ctx = self._ctx
+        project = QgsProject.instance()
+        place = None
+        replaced = False
+        if ctx["want_gpkg"]:
+            old = DL.vector_layers_for(project, ctx["out_gpkg"], self._norm)
+            replaced = bool(old)
+            place = DL.take_old(project, old, ctx["out_gpkg"], self._norm)   # retirees AVANT d'ecraser le fichier (verrou Windows)
+        for want, tmp, out in ((ctx["want_dxf"], ctx["tmp_dxf"], ctx["out_dxf"]),
+                               (ctx["want_gpkg"], ctx["tmp_gpkg"], ctx["out_gpkg"])):
+            if want and not self._swap(tmp, out):
+                self._dxf_cleanup()
+                self._set_busy(False)
+                QMessageBox.critical(self, i18n.tr("err_title"), i18n.tr("err_write", detail=out))
+                return
+            if want:
+                self._written.add(self._norm(out))
+        self._dxf_cleanup()                               # il ne reste que le DXF temporaire inutile (GPKG seul)
+        self.settings.setValue("CalePlan/out_dir", ctx["folder"])
+        files = []
+        if ctx["want_dxf"]:
+            files.append(os.path.basename(ctx["out_dxf"]))
+        if ctx["want_gpkg"]:
+            files.append(os.path.basename(ctx["out_gpkg"]))
+        ctx["files"] = files
+        ctx["replaced"] = replaced
+        tables = res.get("counts") or []
+        if ctx["want_gpkg"]:
+            n_calques = len({t["calque"] for t in tables})
+            self.log(i18n.tr("log_gpkg", counts=i18n.tr("gpkg_summary", layers=n_calques,
+                                                         objects=sum(t["count"] for t in tables))))
+            if self.chk_add.isChecked() or place is not None:
+                # Les couches se creent UNE PAR UNE, la main revenant a l'interface entre deux : la barre
+                # avance et la fenetre reste vivante (aucun processEvents).
+                group = _sanitize(os.path.splitext(os.path.basename(self.path))[0]) or ctx["stem"]
+                if "layers" not in self._plan:
+                    self._plan["layers"] = (self.progress.value(), 100 - self.progress.value())
+                ctx["place"] = place
+                self._builder = DL.Builder(project, ctx["out_gpkg"], tables, group, ctx["crs"], self._norm, place)
+                self._build_step(res)
+                return
+        self._dxf_finish(res, None)
+
+    def _build_step(self, res):
+        b = self._builder
+        if b is None:
+            return
+        try:
+            finished = b.step()
+        except RuntimeError as exc:           # couche refusee par QGIS : on passe, le reste du groupe reste utile
+            self.log(i18n.tr("log_error", detail=str(exc)))
+            finished = b.done >= b.total
+        start, width = self._plan.get("layers", (0, 100))
+        self.progress.setValue(int(start + width * b.done / max(1, b.total)))
+        self.lbl_status.setText(i18n.tr("status_adding_layers", n=b.done, total=b.total))
+        if not finished:
+            QTimer.singleShot(0, lambda: self._build_step(res))     # rend la main a la boucle d'evenements
+            return
+        added = b.added
+        self._builder = None
+        if self._ctx.get("place") is None and added:
+            DL.zoom_to(self.canvas, added)
+        self._dxf_finish(res, added)
+
+    def _dxf_finish(self, res, added):
+        ctx = self._ctx
+        extra = ""
+        if added is not None:
+            extra += i18n.tr("done_dxf_layers", n=len(added))
+            if ctx.get("replaced"):
+                extra += i18n.tr("done_dxf_replaced")
+            self.canvas.refresh()
+        if res.get("dropped"):
+            extra += i18n.tr("done_dxf_dropped", n=res["dropped"])
+        self._set_busy(False)
+        msg = i18n.tr("done_dxf", files=" + ".join(ctx["files"]), extra=extra)
+        self.lbl_status.setText(msg)
+        for f in (ctx["out_dxf"] if ctx["want_dxf"] else None, ctx["out_gpkg"] if ctx["want_gpkg"] else None):
+            if f:
+                self.log(i18n.tr("log_written", path=f))
+        self.iface.messageBar().pushSuccess("CalePlan", msg)
 
     @staticmethod
     def _norm(path):
@@ -1037,11 +1553,12 @@ class CalePlanDialog(QDialog):
             QMessageBox.critical(self, i18n.tr("err_title"), i18n.tr("err_write", detail=out))
             return
         self._tmp = None
-        self.settings.setValue("CalePlan/out_dir", folder)
+        if self._saving:
+            self.settings.setValue("CalePlan/out_dir", folder)
         self._outputs[key] = out
         self._written.add(self._norm(out))
         extra = ""
-        if info is not None or self.chk_add.isChecked():
+        if info is not None or self.chk_add.isChecked() or not self._saving:    # sans fichier garde, la couche est la seule trace
             layer = QgsRasterLayer(out, info["name"] if info else os.path.splitext(name)[0])
             if layer.isValid():
                 layer.setCrs(crs)
@@ -1057,11 +1574,20 @@ class CalePlanDialog(QDialog):
                 else:
                     layer.setOpacity(self.sld_opacity.value() / 100.0)
                     project.addMapLayer(layer)
-                    self.canvas.setExtent(layer.extent())
+                    ext = layer.extent()
+                    canvas_crs = self.canvas.mapSettings().destinationCrs()
+                    if layer.crs() != canvas_crs:
+                        try:
+                            ext = self._transform(layer.crs(), canvas_crs).transformBoundingBox(ext)
+                        except QgsCsException:
+                            pass                        # on garde l'emprise telle quelle
+                    self.canvas.setExtent(ext)
                     extra = i18n.tr("done_added")
                 self.canvas.refresh()
         if warped:
             extra += i18n.tr("done_resampled")
+        if not self._saving:
+            extra += i18n.tr("done_temp")
         self._set_busy(False)
         msg = i18n.tr("done", name=name, extra=extra)
         self.lbl_status.setText(msg)
@@ -1101,6 +1627,11 @@ class CalePlanDialog(QDialog):
         self._preview_timer.stop()
         if self._worker is not None:
             self._worker.wait(30000)
+        if self._installer is not None:
+            self._installer.wait(60000)
+        if self._loader is not None:
+            self._loader.wait(60000)
+        self._builder = None
         self._hidden_for_pick = False
         self._cancel_pending()
         for m in self._markers:

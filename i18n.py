@@ -35,26 +35,26 @@ def tr(key, **kw):
 
 TR = {
     "window_title": {
-        "fr": "CalePlan — Caler un PDF ou une image",
-        "en": "CalePlan — Georeference a PDF or an image",
-        "es": "CalePlan — Georreferenciar un PDF o una imagen",
-        "pt": "CalePlan — Georreferenciar um PDF ou uma imagem",
-        "de": "CalePlan — PDF oder Bild georeferenzieren"},
+        "fr": "CalePlan — Caler un PDF, une image ou un DXF",
+        "en": "CalePlan — Georeference a PDF, an image or a DXF",
+        "es": "CalePlan — Georreferenciar un PDF, una imagen o un DXF",
+        "pt": "CalePlan — Georreferenciar um PDF, uma imagem ou um DXF",
+        "de": "CalePlan — PDF, Bild oder DXF georeferenzieren"},
     "open_btn": {
-        "fr": "Ouvrir un PDF ou une image…", "en": "Open a PDF or an image…",
-        "es": "Abrir un PDF o una imagen…", "pt": "Abrir um PDF ou uma imagem…",
-        "de": "PDF oder Bild öffnen…"},
+        "fr": "Ouvrir un PDF, une image ou un DXF…", "en": "Open a PDF, an image or a DXF…",
+        "es": "Abrir un PDF, una imagen o un DXF…", "pt": "Abrir um PDF, uma imagem ou um DXF…",
+        "de": "PDF, Bild oder DXF öffnen…"},
     "open_short": {"fr": "Ouvrir…", "en": "Open…", "es": "Abrir…", "pt": "Abrir…", "de": "Öffnen…"},
     "open_title": {
-        "fr": "Choisir un PDF ou une image", "en": "Choose a PDF or an image",
-        "es": "Elegir un PDF o una imagen", "pt": "Escolher um PDF ou uma imagem",
-        "de": "PDF oder Bild auswählen"},
+        "fr": "Choisir un PDF, une image ou un DXF", "en": "Choose a PDF, an image or a DXF",
+        "es": "Elegir un PDF, una imagen o un DXF", "pt": "Escolher um PDF, uma imagem ou um DXF",
+        "de": "PDF, Bild oder DXF auswählen"},
     "file_filter": {
-        "fr": "PDF et images (*.pdf *.jpg *.jpeg *.png *.tif *.tiff *.bmp *.gif);;Tous les fichiers (*)",
-        "en": "PDF and images (*.pdf *.jpg *.jpeg *.png *.tif *.tiff *.bmp *.gif);;All files (*)",
-        "es": "PDF e imágenes (*.pdf *.jpg *.jpeg *.png *.tif *.tiff *.bmp *.gif);;Todos los archivos (*)",
-        "pt": "PDF e imagens (*.pdf *.jpg *.jpeg *.png *.tif *.tiff *.bmp *.gif);;Todos os ficheiros (*)",
-        "de": "PDF und Bilder (*.pdf *.jpg *.jpeg *.png *.tif *.tiff *.bmp *.gif);;Alle Dateien (*)"},
+        "fr": "PDF, images et DXF (*.pdf *.dxf *.jpg *.jpeg *.png *.tif *.tiff *.bmp *.gif);;Tous les fichiers (*)",
+        "en": "PDF, images and DXF (*.pdf *.dxf *.jpg *.jpeg *.png *.tif *.tiff *.bmp *.gif);;All files (*)",
+        "es": "PDF, imágenes y DXF (*.pdf *.dxf *.jpg *.jpeg *.png *.tif *.tiff *.bmp *.gif);;Todos los archivos (*)",
+        "pt": "PDF, imagens e DXF (*.pdf *.dxf *.jpg *.jpeg *.png *.tif *.tiff *.bmp *.gif);;Todos os ficheiros (*)",
+        "de": "PDF, Bilder und DXF (*.pdf *.dxf *.jpg *.jpeg *.png *.tif *.tiff *.bmp *.gif);;Alle Dateien (*)"},
     "no_file": {
         "fr": "Aucun fichier ouvert — ou glissez-le ici", "en": "No file open — or drop it here",
         "es": "Ningún archivo abierto — o arrástrelo aquí", "pt": "Nenhum ficheiro aberto — ou arraste-o para aqui",
@@ -96,9 +96,9 @@ TR = {
     "col_y": {"fr": "Y carte", "en": "Map Y", "es": "Y mapa", "pt": "Y mapa", "de": "Karte Y"},
     "col_err": {"fr": "Écart", "en": "Error", "es": "Error", "pt": "Erro", "de": "Abw."},
     "hint_open": {
-        "fr": "Ouvrez d'abord un PDF ou une image.", "en": "First open a PDF or an image.",
-        "es": "Abra primero un PDF o una imagen.", "pt": "Abra primeiro um PDF ou uma imagem.",
-        "de": "Öffnen Sie zuerst ein PDF oder ein Bild."},
+        "fr": "Ouvrez d'abord un PDF, une image ou un DXF.", "en": "First open a PDF, an image or a DXF.",
+        "es": "Abra primero un PDF, una imagen o un DXF.", "pt": "Abra primeiro um PDF, uma imagem ou um DXF.",
+        "de": "Öffnen Sie zuerst ein PDF, ein Bild oder ein DXF."},
     "hint_none": {
         "fr": "① Cliquez un repère net sur l'image (croisement, angle de parcelle…).",
         "en": "① Click a sharp landmark on the image (crossing, parcel corner…).",
@@ -299,11 +299,11 @@ TR = {
         "pt": "O ajuste inverteria a imagem (espelho): verifique a ordem dos pontos.",
         "de": "Die Anpassung würde das Bild spiegeln: prüfen Sie die Reihenfolge der Punkte."},
     "err_geographic": {
-        "fr": "Le SCR du projet est géographique (degrés) : choisissez un SCR projeté (ex. EPSG:2154).",
-        "en": "The project CRS is geographic (degrees): choose a projected CRS (e.g. EPSG:2154).",
-        "es": "El SRC del proyecto es geográfico (grados): elija un SRC proyectado (p. ej. EPSG:2154).",
-        "pt": "O SRC do projeto é geográfico (graus): escolha um SRC projetado (ex. EPSG:2154).",
-        "de": "Das Projekt-KBS ist geographisch (Grad): wählen Sie ein projiziertes KBS (z. B. EPSG:2154)."},
+        "fr": "Le SCR du calage est géographique (degrés) : choisissez un SCR projeté (ex. EPSG:2154) dans la liste « SCR ».",
+        "en": "The fit CRS is geographic (degrees): choose a projected CRS (e.g. EPSG:2154) in the “CRS” list.",
+        "es": "El SRC del ajuste es geográfico (grados): elija un SRC proyectado (p. ej. EPSG:2154) en la lista «SRC».",
+        "pt": "O SRC do ajuste é geográfico (graus): escolha um SRC projetado (ex. EPSG:2154) na lista «SRC».",
+        "de": "Das KBS der Anpassung ist geographisch (Grad): wählen Sie ein projiziertes KBS (z. B. EPSG:2154) in der Liste „KBS“."},
     "err_write": {
         "fr": "Écriture impossible : {detail}", "en": "Cannot write the file: {detail}",
         "es": "No se puede escribir el archivo: {detail}", "pt": "Não é possível escrever o ficheiro: {detail}",
@@ -426,6 +426,24 @@ TR = {
         "fr": "ℹ Couleur transparente {color}, tolérance {tol}", "en": "ℹ Transparent colour {color}, tolerance {tol}",
         "es": "ℹ Color transparente {color}, tolerancia {tol}", "pt": "ℹ Cor transparente {color}, tolerância {tol}",
         "de": "ℹ Transparente Farbe {color}, Toleranz {tol}"},
+    "crs_tip": {
+        "fr": "SCR du calage et du GeoTIFF. Par défaut celui du projet ; choisissez-en un autre (EPSG:2154, EPSG:3946…) si votre plan est exprimé dans un autre système : les clics sur la carte sont convertis automatiquement.",
+        "en": "CRS of the fit and of the GeoTIFF. The project CRS by default; pick another one (EPSG:2154, EPSG:3946…) if your plan is expressed in a different system: clicks on the map are converted automatically.",
+        "es": "SRC del ajuste y del GeoTIFF. El del proyecto por defecto; elija otro (EPSG:2154, EPSG:3946…) si su plano está en otro sistema: los clics en el mapa se convierten automáticamente.",
+        "pt": "SRC do ajuste e do GeoTIFF. O do projeto por omissão; escolha outro (EPSG:2154, EPSG:3946…) se a sua planta estiver noutro sistema: os cliques no mapa são convertidos automaticamente.",
+        "de": "KBS der Anpassung und des GeoTIFF. Standardmäßig das des Projekts; wählen Sie ein anderes (EPSG:2154, EPSG:3946…), wenn Ihr Plan in einem anderen System vorliegt: Klicks in der Karte werden automatisch umgerechnet."},
+    "col_xy_tip": {
+        "fr": "Coordonnées dans {authid} (SCR du calage)", "en": "Coordinates in {authid} (fit CRS)",
+        "es": "Coordenadas en {authid} (SRC del ajuste)", "pt": "Coordenadas em {authid} (SRC do ajuste)",
+        "de": "Koordinaten in {authid} (KBS der Anpassung)"},
+    "err_crs_transform": {
+        "fr": "Conversion impossible vers ce SCR : {detail}", "en": "Cannot convert to this CRS: {detail}",
+        "es": "No se puede convertir a este SRC: {detail}", "pt": "Não é possível converter para este SRC: {detail}",
+        "de": "Umrechnung in dieses KBS nicht möglich: {detail}"},
+    "log_crs": {
+        "fr": "ℹ SCR du calage : {authid} (points convertis)", "en": "ℹ Fit CRS: {authid} (points converted)",
+        "es": "ℹ SRC del ajuste: {authid} (puntos convertidos)", "pt": "ℹ SRC do ajuste: {authid} (pontos convertidos)",
+        "de": "ℹ KBS der Anpassung: {authid} (Punkte umgerechnet)"},
     "ab_version": {
         "fr": "Version {version} — journal des modifications", "en": "Version {version} — changelog",
         "es": "Versión {version} — registro de cambios", "pt": "Versão {version} — registo de alterações",
@@ -472,3 +490,165 @@ TR = {
         "es": "Indique un nombre de archivo de salida.", "pt": "Indique um nome de ficheiro de saída.",
         "de": "Geben Sie einen Ausgabedateinamen an."},
 }
+
+
+# --------------------------------------------------------------------------- DXF (1.1.0)
+TR.update({
+    "dxf_item": {"fr": "Plan DXF", "en": "DXF drawing", "es": "Plano DXF", "pt": "Planta DXF", "de": "DXF-Zeichnung"},
+    "chip_dxf": {"fr": "DXF", "en": "DXF", "es": "DXF", "pt": "DXF", "de": "DXF"},
+    "dxf_res_label": {
+        "fr": "Définition de l'aperçu :", "en": "Preview definition:", "es": "Definición de la vista previa:",
+        "pt": "Definição da pré-visualização:", "de": "Vorschau-Auflösung:"},
+    "dxf_res_item": {"fr": "{px} px", "en": "{px} px", "es": "{px} px", "pt": "{px} px", "de": "{px} px"},
+    "fit_dxf": {
+        "fr": "Échelle : ×{k} · rotation : {rot}°", "en": "Scale: ×{k} · rotation: {rot}°",
+        "es": "Escala: ×{k} · rotación: {rot}°", "pt": "Escala: ×{k} · rotação: {rot}°",
+        "de": "Maßstab: ×{k} · Drehung: {rot}°"},
+    "hint_dxf": {
+        "fr": "① Cliquez un repère net du dessin : le clic s'accroche au sommet le plus proche "
+              "(Maj enfoncée = sans accrochage).",
+        "en": "① Click a sharp landmark of the drawing: the click snaps to the nearest vertex "
+              "(hold Shift = no snapping).",
+        "es": "① Haga clic en una referencia nítida del dibujo: el clic se ajusta al vértice más cercano "
+              "(Mayús = sin ajuste).",
+        "pt": "① Clique num ponto de referência nítido do desenho: o clique ajusta-se ao vértice mais próximo "
+              "(Shift = sem ajuste).",
+        "de": "① Klicken Sie einen klaren Punkt der Zeichnung an: der Klick rastet am nächsten Stützpunkt ein "
+              "(Umschalt = ohne Einrasten)."},
+    "out_dxf_cb": {"fr": "DXF", "en": "DXF", "es": "DXF", "pt": "DXF", "de": "DXF"},
+    "out_gpkg_cb": {"fr": "GeoPackage", "en": "GeoPackage", "es": "GeoPackage", "pt": "GeoPackage",
+                    "de": "GeoPackage"},
+    "out_name_dxf": {"fr": "Nom de base", "en": "Base name", "es": "Nombre base", "pt": "Nome base",
+                     "de": "Basisname"},
+    "out_what": {"fr": "Produire :", "en": "Output:", "es": "Producir:", "pt": "Produzir:", "de": "Ausgabe:"},
+    "err_no_output": {
+        "fr": "Cochez au moins une sortie : DXF calé ou GeoPackage.",
+        "en": "Tick at least one output: georeferenced DXF or GeoPackage.",
+        "es": "Marque al menos una salida: DXF georreferenciado o GeoPackage.",
+        "pt": "Marque pelo menos uma saída: DXF georreferenciado ou GeoPackage.",
+        "de": "Wählen Sie mindestens eine Ausgabe: georeferenziertes DXF oder GeoPackage."},
+    "dxf_need_text": {
+        "fr": "Lire un DXF demande la bibliothèque ezdxf (licence MIT, environ 12 Mo), absente de QGIS.\n\n"
+              "L'installer maintenant dans le dossier du plugin ? (connexion internet nécessaire, une seule fois)",
+        "en": "Reading a DXF needs the ezdxf library (MIT licence, about 12 MB), which QGIS does not include.\n\n"
+              "Install it now in the plugin folder? (internet connection needed, one time only)",
+        "es": "Leer un DXF requiere la biblioteca ezdxf (licencia MIT, unos 12 MB), que QGIS no incluye.\n\n"
+              "¿Instalarla ahora en la carpeta del plugin? (requiere internet, solo una vez)",
+        "pt": "Ler um DXF requer a biblioteca ezdxf (licença MIT, cerca de 12 MB), que o QGIS não inclui.\n\n"
+              "Instalá-la agora na pasta do plugin? (requer internet, só uma vez)",
+        "de": "Zum Lesen von DXF wird die Bibliothek ezdxf benötigt (MIT-Lizenz, etwa 12 MB), die QGIS nicht "
+              "enthält.\n\nJetzt im Plugin-Ordner installieren? (Internetverbindung nötig, nur einmal)"},
+    "dxf_installing": {
+        "fr": "Installation d'ezdxf en cours…", "en": "Installing ezdxf…", "es": "Instalando ezdxf…",
+        "pt": "A instalar o ezdxf…", "de": "ezdxf wird installiert…"},
+    "dxf_install_ok": {
+        "fr": "ezdxf installé.", "en": "ezdxf installed.", "es": "ezdxf instalado.",
+        "pt": "ezdxf instalado.", "de": "ezdxf installiert."},
+    "dxf_install_fail": {
+        "fr": "L'installation d'ezdxf a échoué.\n\nCommande à lancer à la main dans l'OSGeo4W Shell :\n{cmd}",
+        "en": "Installing ezdxf failed.\n\nCommand to run by hand in the OSGeo4W Shell:\n{cmd}",
+        "es": "La instalación de ezdxf ha fallado.\n\nComando para ejecutar a mano en el OSGeo4W Shell:\n{cmd}",
+        "pt": "A instalação do ezdxf falhou.\n\nComando a executar à mão na OSGeo4W Shell:\n{cmd}",
+        "de": "Die Installation von ezdxf ist fehlgeschlagen.\n\nBefehl zum manuellen Ausführen in der "
+              "OSGeo4W-Shell:\n{cmd}"},
+    "err_dxf_open": {
+        "fr": "Lecture du DXF impossible : {detail}", "en": "Cannot read the DXF: {detail}",
+        "es": "No se puede leer el DXF: {detail}", "pt": "Não foi possível ler o DXF: {detail}",
+        "de": "DXF kann nicht gelesen werden: {detail}"},
+    "err_dxf_empty": {
+        "fr": "Ce DXF ne contient aucun objet dessinable dans l'espace objet (modèle).",
+        "en": "This DXF has no drawable object in model space.",
+        "es": "Este DXF no contiene ningún objeto dibujable en el espacio modelo.",
+        "pt": "Este DXF não contém nenhum objeto desenhável no espaço modelo.",
+        "de": "Diese DXF enthält kein zeichenbares Objekt im Modellbereich."},
+    "status_dxf_read": {
+        "fr": "Lecture du DXF…", "en": "Reading the DXF…", "es": "Leyendo el DXF…",
+        "pt": "A ler o DXF…", "de": "DXF wird gelesen…"},
+    "status_dxf_loaded": {
+        "fr": "DXF affiché ({w}×{h} px, {n} objets).", "en": "DXF displayed ({w}×{h} px, {n} objects).",
+        "es": "DXF mostrado ({w}×{h} px, {n} objetos).", "pt": "DXF apresentado ({w}×{h} px, {n} objetos).",
+        "de": "DXF angezeigt ({w}×{h} px, {n} Objekte)."},
+    "log_dxf": {
+        "fr": "ℹ DXF lu : {n} objets, {layers} calques, étendue {w} × {h} unités{extra}",
+        "en": "ℹ DXF read: {n} objects, {layers} layers, extent {w} × {h} units{extra}",
+        "es": "ℹ DXF leído: {n} objetos, {layers} capas, extensión {w} × {h} unidades{extra}",
+        "pt": "ℹ DXF lido: {n} objetos, {layers} camadas, extensão {w} × {h} unidades{extra}",
+        "de": "ℹ DXF gelesen: {n} Objekte, {layers} Layer, Ausdehnung {w} × {h} Einheiten{extra}"},
+    "log_dxf_outliers": {
+        "fr": " ({k} sommets très éloignés ignorés pour le cadrage)",
+        "en": " ({k} far-away vertices ignored for framing)",
+        "es": " ({k} vértices muy alejados ignorados para el encuadre)",
+        "pt": " ({k} vértices muito afastados ignorados no enquadramento)",
+        "de": " ({k} weit entfernte Stützpunkte beim Ausschnitt ignoriert)"},
+    "log_dxf_skipped": {
+        "fr": "⚠ {k} objet(s) du DXF non reconnu(s) : absents de l'aperçu.",
+        "en": "⚠ {k} DXF object(s) not recognised: missing from the preview.",
+        "es": "⚠ {k} objeto(s) del DXF no reconocido(s): ausentes de la vista previa.",
+        "pt": "⚠ {k} objeto(s) do DXF não reconhecido(s): ausentes da pré-visualização.",
+        "de": "⚠ {k} DXF-Objekt(e) nicht erkannt: in der Vorschau nicht enthalten."},
+    "log_snap": {
+        "fr": "▶ Accroché sur un sommet du dessin.", "en": "▶ Snapped to a drawing vertex.",
+        "es": "▶ Ajustado a un vértice del dibujo.", "pt": "▶ Ajustado a um vértice do desenho.",
+        "de": "▶ An Stützpunkt der Zeichnung eingerastet."},
+    "status_writing_dxf": {
+        "fr": "Écriture du DXF calé…", "en": "Writing the georeferenced DXF…",
+        "es": "Escribiendo el DXF georreferenciado…", "pt": "A escrever o DXF georreferenciado…",
+        "de": "Georeferenziertes DXF wird geschrieben…"},
+    "status_writing_gpkg": {
+        "fr": "Conversion en GeoPackage…", "en": "Converting to GeoPackage…",
+        "es": "Convirtiendo a GeoPackage…", "pt": "A converter para GeoPackage…",
+        "de": "Umwandlung in GeoPackage…"},
+    "done_dxf": {
+        "fr": "✔ Calage terminé : {files}{extra}.", "en": "✔ Georeferencing done: {files}{extra}.",
+        "es": "✔ Georreferenciación terminada: {files}{extra}.", "pt": "✔ Georreferenciação concluída: {files}{extra}.",
+        "de": "✔ Georeferenzierung abgeschlossen: {files}{extra}."},
+    "done_dxf_layers": {
+        "fr": " ; {n} couche(s) ajoutée(s) au projet", "en": "; {n} layer(s) added to the project",
+        "es": "; {n} capa(s) añadida(s) al proyecto", "pt": "; {n} camada(s) adicionada(s) ao projeto",
+        "de": "; {n} Ebene(n) zum Projekt hinzugefügt"},
+    "done_dxf_replaced": {
+        "fr": " (remplace les couches précédentes)", "en": " (replacing the previous layers)",
+        "es": " (sustituye las capas anteriores)", "pt": " (substitui as camadas anteriores)",
+        "de": " (ersetzt die vorherigen Ebenen)"},
+    "done_dxf_dropped": {
+        "fr": " ; {n} objet(s) non transformable(s) retiré(s) du DXF",
+        "en": "; {n} object(s) that cannot be transformed removed from the DXF",
+        "es": "; {n} objeto(s) no transformable(s) retirado(s) del DXF",
+        "pt": "; {n} objeto(s) não transformável(is) removido(s) do DXF",
+        "de": "; {n} nicht transformierbare(s) Objekt(e) aus dem DXF entfernt"},
+    "gpkg_summary": {
+        "fr": "{layers} calque(s) du DXF, {objects} objets", "en": "{layers} DXF layer(s), {objects} objects",
+        "es": "{layers} capa(s) del DXF, {objects} objetos", "pt": "{layers} camada(s) do DXF, {objects} objetos",
+        "de": "{layers} DXF-Layer, {objects} Objekte"},
+    "out_save": {"fr": "Enregistrer le GeoTIFF", "en": "Save the GeoTIFF", "es": "Guardar el GeoTIFF",
+                 "pt": "Guardar o GeoTIFF", "de": "GeoTIFF speichern"},
+    "out_save_tip": {
+        "fr": "Coché : le GeoTIFF est écrit dans le dossier choisi.\nDécoché : il est écrit dans le dossier temporaire "
+              "de Windows et ajouté au projet comme couche temporaire (à ne pas garder telle quelle dans un projet "
+              "enregistré).",
+        "en": "Ticked: the GeoTIFF is written to the chosen folder.\nUnticked: it is written to the system temporary "
+              "folder and added to the project as a temporary layer (do not keep it as is in a saved project).",
+        "es": "Marcado: el GeoTIFF se escribe en la carpeta elegida.\nDesmarcado: se escribe en la carpeta temporal "
+              "del sistema y se añade al proyecto como capa temporal (no conservarla así en un proyecto guardado).",
+        "pt": "Marcado: o GeoTIFF é escrito na pasta escolhida.\nDesmarcado: é escrito na pasta temporária do "
+              "sistema e adicionado ao projeto como camada temporária (não a manter assim num projeto guardado).",
+        "de": "Aktiv: das GeoTIFF wird in den gewählten Ordner geschrieben.\nInaktiv: es wird im temporären "
+              "Systemordner abgelegt und dem Projekt als temporäre Ebene hinzugefügt (so nicht in einem "
+              "gespeicherten Projekt behalten)."},
+    "done_temp": {
+        "fr": " — couche TEMPORAIRE (GeoTIFF non enregistré dans votre dossier)",
+        "en": " — TEMPORARY layer (GeoTIFF not saved to your folder)",
+        "es": " — capa TEMPORAL (GeoTIFF no guardado en su carpeta)",
+        "pt": " — camada TEMPORÁRIA (GeoTIFF não guardado na sua pasta)",
+        "de": " — TEMPORÄRE Ebene (GeoTIFF nicht in Ihrem Ordner gespeichert)"},
+    "recap_temp": {
+        "fr": "⏳ GeoTIFF temporaire", "en": "⏳ temporary GeoTIFF", "es": "⏳ GeoTIFF temporal",
+        "pt": "⏳ GeoTIFF temporário", "de": "⏳ temporäres GeoTIFF"},
+    "status_adding_layers": {
+        "fr": "Création des couches dans QGIS… {n}/{total}", "en": "Creating the layers in QGIS… {n}/{total}",
+        "es": "Creando las capas en QGIS… {n}/{total}", "pt": "A criar as camadas no QGIS… {n}/{total}",
+        "de": "Ebenen werden in QGIS erstellt… {n}/{total}"},
+    "log_gpkg": {
+        "fr": "ℹ GeoPackage : {counts}", "en": "ℹ GeoPackage: {counts}", "es": "ℹ GeoPackage: {counts}",
+        "pt": "ℹ GeoPackage: {counts}", "de": "ℹ GeoPackage: {counts}"},
+})

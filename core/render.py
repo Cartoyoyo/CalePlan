@@ -76,6 +76,10 @@ def is_pdf(path):
     return os.path.splitext(path)[1].lower() in PDF_EXT
 
 
+def is_dxf(path):
+    return os.path.splitext(path)[1].lower() == ".dxf"
+
+
 def is_image(path):
     return os.path.splitext(path)[1].lower() in IMAGE_EXT
 

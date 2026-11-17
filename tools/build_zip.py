@@ -22,7 +22,7 @@ PLUGIN_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PACKAGE = "CalePlan"
 
 # Dossiers entierement exclus.
-EXCLUDED_DIRS = {"tools", "docs", "__pycache__", ".git", ".github", ".vscode"}
+EXCLUDED_DIRS = {"tools", "docs", "libs", "__pycache__", ".git", ".github", ".vscode"}
 
 # Fichiers exclus par extension ou par nom.
 EXCLUDED_SUFFIXES = (".pyc", ".pyo", ".bak", ".zip", ".log")

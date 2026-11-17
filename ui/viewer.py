@@ -69,23 +69,49 @@ class ImageView(QGraphicsView):
         self._item = None
         self._checker = None
         self._markers = []
+        self._levels = []
+        self._level = 0
         self._w = self._h = 0
 
-    def _pixmap_for(self, arr):
-        """(pixmap, facteur) : l'affichage est limite a DISPLAY_MAX pixels, l'image complete reste en memoire."""
+    def _levels_for(self, arr):
+        """Pixmaps de l'image a des echelles 1, 1/2, 1/4... : l'affichage est limite a DISPLAY_MAX pixels
+        (l'image complete reste en memoire) et, tres reduit, on montre un niveau deja moyenne : Qt reduit
+        sans moyenne un grand pixmap, ce qui efface les traits fins d'un plan (DXF, PDF) en vue d'ensemble."""
         h, w = arr.shape[:2]
         img = array_to_qimage(arr)
-        k = 1.0
         if max(w, h) > DISPLAY_MAX:
             k = max(w, h) / float(DISPLAY_MAX)
             img = img.scaled(int(w / k), int(h / k), Qt.AspectRatioMode.KeepAspectRatio,
                              Qt.TransformationMode.SmoothTransformation)
-        return QPixmap.fromImage(img), k
+        levels = [QPixmap.fromImage(img)]
+        cur = img
+        while min(cur.width(), cur.height()) >= 600:
+            cur = cur.scaled(max(1, cur.width() // 2), max(1, cur.height() // 2),
+                             Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            levels.append(QPixmap.fromImage(cur))
+        return levels
+
+    def _show_level(self):
+        """Niveau d'echelle adapte au zoom : celui dont l'affichage reste proche de 1 pixel d'ecran par pixel."""
+        if self._item is None or not self._levels:
+            return
+        z = max(self.transform().m11(), 1e-6)
+        idx = 0
+        while idx + 1 < len(self._levels) and z * (2 ** (idx + 1)) <= 1.0:
+            idx += 1
+        if idx != self._level:
+            self._level = idx
+            pm = self._levels[idx]
+            self._item.setPixmap(pm)
+            self._item.setScale(self._w / float(pm.width()))
 
     def set_image(self, arr):
         self.clear_image()
         h, w = arr.shape[:2]
-        pm, k = self._pixmap_for(arr)
+        self._levels = self._levels_for(arr)
+        self._level = 0
+        pm = self._levels[0]
+        k = w / float(pm.width())
         # damier derriere l'image (visible seulement si l'image a de la transparence)
         self._checker = QGraphicsRectItem(0, 0, w, h)
         self._checker.setPen(QPen(Qt.PenStyle.NoPen))
@@ -107,9 +133,9 @@ class ImageView(QGraphicsView):
         version reduite de l'image (apercu rapide) : elle est mise a l'echelle de l'image complete."""
         if self._item is None:
             return
-        pm, _k = self._pixmap_for(arr)
-        self._item.setPixmap(pm)
-        self._item.setScale(self._w / float(pm.width()))
+        self._levels = self._levels_for(arr)
+        self._level = -1                       # force la mise a jour du pixmap affiche
+        self._show_level()
         if self._checker is not None:
             self._checker.setVisible(bool(transparent))
 
@@ -135,6 +161,7 @@ class ImageView(QGraphicsView):
         self._bars(False)
         self.resetTransform()
         self.fitInView(QRectF(0, 0, self._w, self._h), Qt.AspectRatioMode.KeepAspectRatio)
+        self._show_level()
 
     def _fit_scale(self):
         vp = self.viewport()
@@ -159,6 +186,7 @@ class ImageView(QGraphicsView):
         self._fitted = False
         self._bars(True)
         self.scale(factor, factor)
+        self._show_level()
         moved = self.mapFromScene(anchor)          # ou il se retrouve apres le zoom
         self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() + moved.x() - pos.x())
         self.verticalScrollBar().setValue(self.verticalScrollBar().value() + moved.y() - pos.y())
